@@ -13,8 +13,8 @@ try:
     import joblib
     from sklearn.svm import SVC
     from sklearn.preprocessing import StandardScaler
-except ImportError as e:
-    print(json.dumps({"error": f"Missing dependency: {str(e)}. Please install librosa, scikit-learn, joblib, numpy."}))
+except Exception as e:
+    print(json.dumps({"error": f"Dependency error: {str(e)}. Please ensure librosa, scikit-learn, joblib, numpy are installed."}))
     sys.exit(1)
 
 # Constants

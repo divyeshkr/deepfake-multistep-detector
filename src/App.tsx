@@ -76,13 +76,20 @@ export default function App() {
         body: formData,
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        const data = await response.json();
 
-      if (data.error || data.status === 'error') {
-        throw new Error(data.error || data.message || 'Verification failed');
+        if (data.error || data.status === 'error') {
+          throw new Error(data.error || data.message || 'Verification failed');
+        }
+
+        setStage2Result(data);
+      } else {
+        const text = await response.text();
+        console.error("Server response:", text);
+        throw new Error("Server returned an invalid response. Please try again later.");
       }
-
-      setStage2Result(data);
 
     } catch (err: any) {
       setError(err.message);

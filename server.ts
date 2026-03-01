@@ -63,6 +63,11 @@ async function startServer() {
       let dataString = '';
       let errorString = '';
 
+      const timeout = setTimeout(() => {
+        pythonProcess.kill();
+        reject(new Error('Processing timed out (limit: 55s). Please try again.'));
+      }, 55000);
+
       pythonProcess.stdout.on('data', (data) => {
         dataString += data.toString();
       });
@@ -72,6 +77,7 @@ async function startServer() {
       });
 
       pythonProcess.on('close', (code) => {
+        clearTimeout(timeout);
         if (code !== 0) {
           console.error('Python script error:', errorString);
           // Try to parse error from stdout if it's JSON
