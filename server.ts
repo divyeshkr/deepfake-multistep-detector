@@ -46,14 +46,26 @@ async function installPythonDependencies() {
 async function startServer() {
   await installPythonDependencies();
 
+  // Ensure uploads directory exists
+  if (!fs.existsSync('uploads')) {
+    fs.mkdirSync('uploads');
+  }
+
   const app = express();
   const upload = multer({ dest: 'uploads/' });
 
   app.use(express.json());
 
+  // Request logging middleware
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.path}`);
+    next();
+  });
+
   // Helper to run python script
   const runPythonScript = (args: string[]): Promise<any> => {
     return new Promise((resolve, reject) => {
+      console.log(`Running python script: python3 detect.py ${args.join(' ')}`);
       const pythonProcess = spawn('python3', ['detect.py', ...args]);
       
       let dataString = '';
@@ -68,16 +80,21 @@ async function startServer() {
       });
 
       pythonProcess.on('close', (code) => {
+        console.log(`Python script exited with code ${code}`);
         if (code !== 0) {
-          console.error('Python script error:', errorString);
+          console.error('Python script error output:', errorString);
+          console.error('Python script stdout:', dataString);
+          
           // Try to parse error from stdout if it's JSON
           try {
              const lines = dataString.trim().split('\n');
              const lastLine = lines[lines.length - 1];
-             const result = JSON.parse(lastLine);
-             if (result.error) {
-               reject(new Error(result.error));
-               return;
+             if (lastLine) {
+                const result = JSON.parse(lastLine);
+                if (result.error) {
+                  reject(new Error(result.error));
+                  return;
+                }
              }
           } catch(e) {}
           
@@ -87,6 +104,9 @@ async function startServer() {
             // Find the last JSON object in the output
             const lines = dataString.trim().split('\n');
             const lastLine = lines[lines.length - 1];
+            if (!lastLine) {
+                throw new Error('No output from Python script');
+            }
             const result = JSON.parse(lastLine);
             resolve(result);
           } catch (e) {
@@ -99,6 +119,7 @@ async function startServer() {
   };
 
   app.post('/api/detect-deepfake', upload.single('audio'), async (req, res) => {
+    console.log('Received /api/detect-deepfake request');
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file provided' });
     }
@@ -113,11 +134,13 @@ async function startServer() {
       }
       res.json(result);
     } catch (error: any) {
+      console.error('Error in /api/detect-deepfake:', error);
       res.status(500).json({ error: error.message || 'Internal server error' });
     }
   });
 
   app.post('/api/verify-speaker', upload.fields([{ name: 'audio1' }, { name: 'audio2' }]), async (req, res) => {
+    console.log('Received /api/verify-speaker request');
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     
     if (!files['audio1']?.[0] || !files['audio2']?.[0]) {
@@ -136,8 +159,15 @@ async function startServer() {
       }
       res.json(result);
     } catch (error: any) {
+      console.error('Error in /api/verify-speaker:', error);
       res.status(500).json({ error: error.message || 'Internal server error' });
     }
+  });
+
+  // Global error handler for JSON responses
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Global error handler:', err);
+    res.status(500).json({ error: err.message || 'Internal server error' });
   });
 
   // Vite middleware for development
