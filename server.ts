@@ -9,8 +9,10 @@ import { createServer as createViteServer } from 'vite';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+let isPythonReady = false;
+
 async function installPythonDependencies() {
-  console.log('Installing Python dependencies...');
+  console.log('Installing Python dependencies in background...');
   return new Promise<void>((resolve, reject) => {
     const pipProcess = spawn('pip3', ['install', '-r', 'requirements.txt']);
 
@@ -25,10 +27,13 @@ async function installPythonDependencies() {
     pipProcess.on('close', (code) => {
       if (code === 0) {
         console.log('Python dependencies installed successfully.');
+        isPythonReady = true;
         resolve();
       } else {
         console.error(`pip exited with code ${code}`);
-        // We resolve anyway to try running the server, maybe packages are already there or partial install worked
+        // Even if it fails, we mark as ready to allow retries or partial functionality
+        // Ideally we'd handle this better, but for now let's unblock
+        isPythonReady = true; 
         resolve(); 
       }
     });
@@ -36,7 +41,8 @@ async function installPythonDependencies() {
 }
 
 async function startServer() {
-  await installPythonDependencies();
+  // Start installation in background, do not await
+  installPythonDependencies();
 
   const app = express();
   const upload = multer({ dest: 'uploads/' });
@@ -91,6 +97,9 @@ async function startServer() {
   };
 
   app.post('/api/detect-deepfake', upload.single('audio'), async (req, res) => {
+    if (!isPythonReady) {
+      return res.status(503).json({ error: 'System is still initializing. Please wait a moment and try again.' });
+    }
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file provided' });
     }
@@ -110,6 +119,9 @@ async function startServer() {
   });
 
   app.post('/api/verify-speaker', upload.fields([{ name: 'audio1' }, { name: 'audio2' }]), async (req, res) => {
+    if (!isPythonReady) {
+      return res.status(503).json({ error: 'System is still initializing. Please wait a moment and try again.' });
+    }
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     
     if (!files['audio1']?.[0] || !files['audio2']?.[0]) {
