@@ -34,21 +34,22 @@ export default function App() {
         body: formData,
       });
       
-      const data = await response.json();
-      
-      if (data.error || data.status === 'error') {
-        throw new Error(data.error || data.message || 'Detection failed');
-      }
-      
-      setStage1Result(data);
-      
-      // If Real (assuming 0 is Real, 1 is Fake based on typical binary classification, or string return)
-      // Let's handle both string and number
-      const isReal = data.result === 'Real' || data.result === 0 || data.result === '0';
-      
-      if (isReal) {
-        // Wait a moment then show stage 2
-        setTimeout(() => setStage(2), 1500);
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        const data = await response.json();
+        if (data.error || data.status === 'error') {
+          throw new Error(data.error || data.message || 'Detection failed');
+        }
+        setStage1Result(data);
+        
+        const isReal = data.result === 'Real' || data.result === 0 || data.result === '0';
+        if (isReal) {
+          setTimeout(() => setStage(2), 1500);
+        }
+      } else {
+        const text = await response.text();
+        console.error("Server response:", text);
+        throw new Error("Server returned an invalid response. Check console for details.");
       }
       
     } catch (err: any) {

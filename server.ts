@@ -44,6 +44,12 @@ async function startServer() {
   // Start installation in background, do not await
   installPythonDependencies();
 
+  // Ensure uploads directory exists
+  const uploadDir = path.join(__dirname, 'uploads');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir);
+  }
+
   const app = express();
   const upload = multer({ dest: 'uploads/' });
 
