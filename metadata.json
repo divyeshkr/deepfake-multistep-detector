@@ -1,0 +1,5 @@
+{
+  "name": "Deepfake Audio Detector",
+  "description": "Two-stage audio authentication system: Deepfake detection followed by speaker verification.",
+  "requestFramePermissions": ["microphone"]
+}
