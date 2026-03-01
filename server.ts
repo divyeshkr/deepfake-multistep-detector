@@ -9,12 +9,11 @@ import { createServer as createViteServer } from 'vite';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-let isPythonReady = false;
-
 async function installPythonDependencies() {
-  console.log('Installing Python dependencies in background...');
+  console.log('Installing Python dependencies...');
   return new Promise<void>((resolve, reject) => {
-    const pipProcess = spawn('pip3', ['install', '-r', 'requirements.txt']);
+    // Use python3 -m pip instead of pip3 directly to be more robust
+    const pipProcess = spawn('python3', ['-m', 'pip', 'install', '-r', 'requirements.txt']);
 
     pipProcess.stdout.on('data', (data) => {
       console.log(`pip: ${data}`);
@@ -24,16 +23,20 @@ async function installPythonDependencies() {
       console.error(`pip error: ${data}`);
     });
 
+    // Add error handler to prevent crash on spawn error (e.g. ENOENT)
+    pipProcess.on('error', (err) => {
+      console.error('Failed to start pip process:', err);
+      // Resolve anyway to allow server to start, though detection might fail
+      resolve();
+    });
+
     pipProcess.on('close', (code) => {
       if (code === 0) {
         console.log('Python dependencies installed successfully.');
-        isPythonReady = true;
         resolve();
       } else {
         console.error(`pip exited with code ${code}`);
-        // Even if it fails, we mark as ready to allow retries or partial functionality
-        // Ideally we'd handle this better, but for now let's unblock
-        isPythonReady = true; 
+        // We resolve anyway to try running the server, maybe packages are already there or partial install worked
         resolve(); 
       }
     });
@@ -41,14 +44,7 @@ async function installPythonDependencies() {
 }
 
 async function startServer() {
-  // Start installation in background, do not await
-  installPythonDependencies();
-
-  // Ensure uploads directory exists
-  const uploadDir = path.join(__dirname, 'uploads');
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir);
-  }
+  await installPythonDependencies();
 
   const app = express();
   const upload = multer({ dest: 'uploads/' });
@@ -63,11 +59,6 @@ async function startServer() {
       let dataString = '';
       let errorString = '';
 
-      const timeout = setTimeout(() => {
-        pythonProcess.kill();
-        reject(new Error('Processing timed out (limit: 55s). Please try again.'));
-      }, 55000);
-
       pythonProcess.stdout.on('data', (data) => {
         dataString += data.toString();
       });
@@ -77,7 +68,6 @@ async function startServer() {
       });
 
       pythonProcess.on('close', (code) => {
-        clearTimeout(timeout);
         if (code !== 0) {
           console.error('Python script error:', errorString);
           // Try to parse error from stdout if it's JSON
@@ -109,9 +99,6 @@ async function startServer() {
   };
 
   app.post('/api/detect-deepfake', upload.single('audio'), async (req, res) => {
-    if (!isPythonReady) {
-      return res.status(503).json({ error: 'System is still initializing. Please wait a moment and try again.' });
-    }
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file provided' });
     }
@@ -131,9 +118,6 @@ async function startServer() {
   });
 
   app.post('/api/verify-speaker', upload.fields([{ name: 'audio1' }, { name: 'audio2' }]), async (req, res) => {
-    if (!isPythonReady) {
-      return res.status(503).json({ error: 'System is still initializing. Please wait a moment and try again.' });
-    }
     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     
     if (!files['audio1']?.[0] || !files['audio2']?.[0]) {
